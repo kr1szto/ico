@@ -7,17 +7,27 @@ FastAPI web wrapper for supplier lookup by Slovak IČO.
 The repository now contains executable deployment files:
 
 - `app.py`
+- `main.py`
 - `requirements.txt`
 - `Dockerfile`
 - `docker-compose.yaml`
+- `fly.toml`
 
-Railway can build the Docker image and the container listens on `${PORT:-8000}`.
+Railway or Fly.io can build the Docker image, install Chromium/ChromeDriver, and run the FastAPI app on `${PORT:-8000}`.
 
-The scraper implementation is still required separately. Add `main.py` with:
+## Runtime modes
 
-```python
-def scrape_subject(ico: str) -> dict:
-    ...
+- Railway, Fly.io, or single-container Docker: uses local Chromium through ChromeDriver.
+- Docker Compose: uses the `selenium` sidecar because `SELENIUM_URL` is set to `http://selenium:4444/wd/hub`.
+
+## Fly.io
+
+Deploy from the repository root with:
+
+```bash
+fly deploy
 ```
 
-Until `main.py` exists, the app can start but `/lookup` will return a configuration error.
+The included `fly.toml` exposes the Dockerfile's `8000` port and starts with a 1 GB shared CPU machine. Increase memory to 2 GB if Chromium exits under load.
+
+External registry pages can still change markup or block automation; scraper failures should be treated as runtime risks, not deployment wiring issues.

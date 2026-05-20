@@ -1,1 +1,6 @@
 .DS_Store
+export.txt
+output/
+*_debug.html
+*_debug.png
+*_result.json

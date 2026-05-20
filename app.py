@@ -13,17 +13,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-try:
-    from main import scrape_subject
-except ModuleNotFoundError as exc:
-    if exc.name != "main":
-        raise
-
-    def scrape_subject(ico: str) -> dict:
-        raise RuntimeError(
-            "Missing main.py with scrape_subject(ico: str). "
-            "Add the scraper module before using /lookup."
-        )
+from main import scrape_subject
 
 
 APP_TITLE = "Supplier IČO Lookup"
@@ -417,6 +407,11 @@ def home():
         </div>
         """,
     )
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 @app.post("/lookup", response_class=HTMLResponse)
