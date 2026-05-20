@@ -28,6 +28,6 @@ Deploy from the repository root with:
 fly deploy
 ```
 
-The included `fly.toml` exposes the Dockerfile's `8000` port and starts with a 1 GB shared CPU machine. Increase memory to 2 GB if Chromium exits under load.
+The included `fly.toml` uses app name `kr1szto-ico`, exposes the Dockerfile's `8000` port, and starts with a 1 GB shared CPU machine. Increase memory to 2 GB if Chromium exits under load.
 
 External registry pages can still change markup or block automation; scraper failures should be treated as runtime risks, not deployment wiring issues.
