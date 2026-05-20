@@ -1,8 +1,3 @@
-# `app.py`
-
-Copy this file into your project root next to `main.py`.
-
-```python
 import csv
 import html
 import json
@@ -18,7 +13,17 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from main import scrape_subject
+try:
+    from main import scrape_subject
+except ModuleNotFoundError as exc:
+    if exc.name != "main":
+        raise
+
+    def scrape_subject(ico: str) -> dict:
+        raise RuntimeError(
+            "Missing main.py with scrape_subject(ico: str). "
+            "Add the scraper module before using /lookup."
+        )
 
 
 APP_TITLE = "Supplier IČO Lookup"
@@ -522,4 +527,3 @@ def download_file(filename: str):
         filename=safe_name,
         media_type=media_type,
     )
-```
