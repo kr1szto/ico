@@ -1,0 +1,33 @@
+# `docker-compose.yaml`
+
+Copy this into `docker-compose.yaml`.
+
+```yaml
+services:
+  selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: selenium-chrome
+    shm_size: 2gb
+    ports:
+      - "4444:4444"
+      - "7900:7900"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:4444/wd/hub/status || wget -q -O - http://localhost:4444/status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  scraper:
+    build: .
+    container_name: py-scraper
+    depends_on:
+      selenium:
+        condition: service_healthy
+    environment:
+      SELENIUM_URL: http://selenium:4444/wd/hub
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./output:/app/output
+```
