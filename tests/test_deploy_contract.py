@@ -44,6 +44,16 @@ class DeployContractTest(unittest.TestCase):
 
         self.assertIn("scrape_subject", functions)
         self.assertIn("create_driver", functions)
+        self.assertIn("run_source", functions)
+        self.assertIn("format_source_error", functions)
+
+    def test_scraper_uses_source_level_error_handling(self):
+        main_py = (ROOT / "main.py").read_text(encoding="utf-8")
+
+        self.assertIn("SCRAPER_WAIT_SECONDS", main_py)
+        self.assertIn("source_key", main_py)
+        self.assertIn("selenium_error", main_py)
+        self.assertIn('type(error).__name__ == "TimeoutException"', main_py)
 
     def test_dockerfile_uses_railway_port_and_chromium(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")

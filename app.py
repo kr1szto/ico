@@ -22,7 +22,6 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title=APP_TITLE)
 
-
 # ============================================================
 # INPUT VALIDATION
 # ============================================================
@@ -147,25 +146,70 @@ def build_risk_flags(result: dict) -> list[dict]:
     finstat = result.get("finstat", {}) or {}
     ruz = result.get("ruz", {}) or {}
 
+    def source_error_detail(source_key: str, fallback: str) -> str:
+        error = result.get(f"{source_key}_error") or {}
+
+        if isinstance(error, dict):
+            error_type = error.get("type", "Error")
+            message = error.get("message", fallback)
+            current_url = error.get("current_url")
+
+            if current_url:
+                return f"{error_type}: {message} URL: {current_url}"
+
+            return f"{error_type}: {message}"
+
+        return fallback
+
     if not orsr:
         flags.append({
             "severity": "yellow",
             "flag": "ORSR data missing",
-            "detail": "ORSR did not return parsed data or scraping failed.",
+            "detail": source_error_detail(
+                "orsr",
+                "ORSR did not return parsed data or scraping failed.",
+            ),
         })
 
     if not finstat:
         flags.append({
             "severity": "yellow",
             "flag": "FinStat data missing",
-            "detail": "FinStat did not return parsed data or scraping failed.",
+            "detail": source_error_detail(
+                "finstat",
+                "FinStat did not return parsed data or scraping failed.",
+            ),
         })
 
     if not ruz:
         flags.append({
             "severity": "yellow",
             "flag": "RÚZ data missing",
-            "detail": "RÚZ did not return parsed data or scraping failed.",
+            "detail": source_error_detail(
+                "ruz",
+                "RÚZ did not return parsed data or scraping failed.",
+            ),
+        })
+
+    if not rpvs:
+        flags.append({
+            "severity": "yellow",
+            "flag": "RPVS data missing",
+            "detail": source_error_detail(
+                "rpvs",
+                "RPVS did not return parsed data or scraping failed.",
+            ),
+        })
+
+    selenium_error = result.get("selenium_error")
+    if isinstance(selenium_error, dict):
+        flags.append({
+            "severity": "red",
+            "flag": "Selenium setup failed",
+            "detail": (
+                f"{selenium_error.get('type', 'Error')}: "
+                f"{selenium_error.get('message', 'Selenium could not complete browser automation.')}"
+            ),
         })
 
     if rpvs and not rpvs.get("konecni_uzivatelia_vyhod"):

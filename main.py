@@ -27,6 +27,8 @@ RUZ_URL = "https://www.registeruz.sk/cruz-public/domain/accountingentity/simples
 SELENIUM_URL = os.getenv("SELENIUM_URL", "").strip()
 CHROME_BIN = os.getenv("CHROME_BIN", "/usr/bin/chromium")
 CHROMEDRIVER_PATH = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
+SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "45"))
+PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "60"))
 
 
 # ============================================================
@@ -59,6 +61,7 @@ def create_remote_driver(options: Options, max_attempts: int, delay: int):
                 command_executor=SELENIUM_URL,
                 options=options
             )
+            configure_driver_timeouts(driver)
             print("[INFO] Selenium session vytvorená úspešne.")
             return driver
         except Exception as e:
@@ -72,8 +75,14 @@ def create_local_driver(options: Options):
     print(f"[INFO] Spúšťam lokálny Chrome driver: {CHROMEDRIVER_PATH}")
     service = Service(executable_path=CHROMEDRIVER_PATH)
     driver = webdriver.Chrome(service=service, options=options)
+    configure_driver_timeouts(driver)
     print("[INFO] Lokálna Selenium session vytvorená úspešne.")
     return driver
+
+
+def configure_driver_timeouts(driver) -> None:
+    driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
+    driver.set_script_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
 
 
 def create_driver(max_attempts=10, delay=3):
@@ -94,6 +103,41 @@ def save_debug(driver, prefix="debug"):
         print(f"[INFO] Uložené {prefix}.html a {prefix}.png")
     except Exception as e:
         print("[WARN] Nepodarilo sa uložiť debug artefakty:", e)
+
+
+def format_source_error(error: Exception, driver=None) -> dict:
+    if type(error).__name__ == "TimeoutException":
+        message = "Timed out waiting for the expected registry page element."
+    else:
+        message = str(error).strip()
+
+        if not message:
+            message = "Timed out waiting for the expected registry page element."
+
+    result = {
+        "type": type(error).__name__,
+        "message": message,
+    }
+
+    if driver:
+        try:
+            result["current_url"] = driver.current_url
+        except Exception:
+            pass
+
+    return result
+
+
+def run_source(subjekt: dict, source_key: str, label: str, callback, driver=None, ico: str | None = None) -> None:
+    try:
+        subjekt[source_key] = callback()
+    except Exception as error:
+        print(f"[ERROR] {label} zlyhal.")
+        traceback.print_exc()
+        subjekt[f"{source_key}_error"] = format_source_error(error, driver=driver)
+
+        if driver and ico:
+            save_debug(driver, prefix=f"{ico}_{source_key}_debug")
 
 
 def normalize_text(text: str) -> str:
@@ -717,40 +761,48 @@ def scrape_subject(ico: str) -> dict:
         "orsr": {},
         "rpvs": {},
         "finstat": {},
-        "ruz":{}
+        "ruz": {}
     }
 
     driver = None
 
     try:
+        run_source(
+            subjekt,
+            "finstat",
+            "FinStat",
+            lambda: finstat_scrape(ico),
+            ico=ico,
+        )
+
         driver = create_driver()
-        wait = WebDriverWait(driver, 20)
+        wait = WebDriverWait(driver, SCRAPER_WAIT_SECONDS)
 
-        # ORSR
-        orsr_search_company(driver, wait, ico)
-        orsr_open_first_result(driver, wait)
-        subjekt["orsr"] = parse_orsr_detail(driver)
+        def scrape_orsr():
+            orsr_search_company(driver, wait, ico)
+            orsr_open_first_result(driver, wait)
+            return parse_orsr_detail(driver)
 
-        # RPVS
-        rpvs_search_company(driver, wait, ico)
-        rpvs_open_first_result(driver, wait)
-        subjekt["rpvs"] = parse_rpvs_detail(driver)
+        def scrape_rpvs():
+            rpvs_search_company(driver, wait, ico)
+            rpvs_open_first_result(driver, wait)
+            return parse_rpvs_detail(driver)
 
-        # FinStat
-        subjekt["finstat"] = finstat_scrape(ico)
+        def scrape_ruz():
+            ruz_search_company(driver, wait, ico)
+            return parse_ruz_detail(driver)
 
-        # RUZ
-        ruz_search_company(driver, wait, ico)
-        subjekt["ruz"] = parse_ruz_detail(driver)
+        run_source(subjekt, "orsr", "ORSR", scrape_orsr, driver=driver, ico=ico)
+        run_source(subjekt, "rpvs", "RPVS", scrape_rpvs, driver=driver, ico=ico)
+        run_source(subjekt, "ruz", "RÚZ", scrape_ruz, driver=driver, ico=ico)
 
         return subjekt
 
-    except Exception:
-        print("[ERROR] scrape_subject zlyhal.")
+    except Exception as error:
+        print("[ERROR] Selenium orchestration zlyhala.")
         traceback.print_exc()
-        if driver:
-            save_debug(driver, prefix=f"{ico}_debug")
-        raise
+        subjekt["selenium_error"] = format_source_error(error, driver=driver)
+        return subjekt
 
     finally:
         if driver:
@@ -778,5 +830,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
