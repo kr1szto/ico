@@ -54,6 +54,15 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn("source_key", main_py)
         self.assertIn("selenium_error", main_py)
         self.assertIn('type(error).__name__ == "TimeoutException"', main_py)
+        self.assertIn("include_deep_sources", main_py)
+
+    def test_ui_has_fast_default_and_full_lookup_mode(self):
+        app_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('name="mode" value="fast" checked', app_py)
+        self.assertIn('name="mode" value="full"', app_py)
+        self.assertIn("markSubmitting", app_py)
+        self.assertIn("include_deep_sources=(lookup_mode == \"full\")", app_py)
 
     def test_dockerfile_uses_railway_port_and_chromium(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")

@@ -755,13 +755,14 @@ def parse_ruz_detail(driver) -> dict:
 # ORCHESTRATION
 # ============================================================
 
-def scrape_subject(ico: str) -> dict:
+def scrape_subject(ico: str, include_deep_sources: bool = True) -> dict:
     subjekt = {
         "ico": ico,
         "orsr": {},
         "rpvs": {},
         "finstat": {},
-        "ruz": {}
+        "ruz": {},
+        "mode": "full" if include_deep_sources else "fast",
     }
 
     driver = None
@@ -774,6 +775,9 @@ def scrape_subject(ico: str) -> dict:
             lambda: finstat_scrape(ico),
             ico=ico,
         )
+
+        if not include_deep_sources:
+            return subjekt
 
         driver = create_driver()
         wait = WebDriverWait(driver, SCRAPER_WAIT_SECONDS)

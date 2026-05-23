@@ -145,6 +145,7 @@ def build_risk_flags(result: dict) -> list[dict]:
     rpvs = result.get("rpvs", {}) or {}
     finstat = result.get("finstat", {}) or {}
     ruz = result.get("ruz", {}) or {}
+    mode = result.get("mode", "full")
 
     def source_error_detail(source_key: str, fallback: str) -> str:
         error = result.get(f"{source_key}_error") or {}
@@ -161,7 +162,7 @@ def build_risk_flags(result: dict) -> list[dict]:
 
         return fallback
 
-    if not orsr:
+    if mode != "fast" and not orsr:
         flags.append({
             "severity": "yellow",
             "flag": "ORSR data missing",
@@ -181,7 +182,7 @@ def build_risk_flags(result: dict) -> list[dict]:
             ),
         })
 
-    if not ruz:
+    if mode != "fast" and not ruz:
         flags.append({
             "severity": "yellow",
             "flag": "RÚZ data missing",
@@ -191,7 +192,7 @@ def build_risk_flags(result: dict) -> list[dict]:
             ),
         })
 
-    if not rpvs:
+    if mode != "fast" and not rpvs:
         flags.append({
             "severity": "yellow",
             "flag": "RPVS data missing",
@@ -380,10 +381,27 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 width: 260px;
                 font-size: 16px;
             }}
+            label {{
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                margin: 14px 18px 0 0;
+                color: #333;
+            }}
+            input[type="radio"] {{
+                width: auto;
+            }}
             button {{
                 padding: 10px 16px;
                 font-size: 16px;
                 cursor: pointer;
+            }}
+            button:disabled {{
+                cursor: wait;
+                opacity: 0.7;
+            }}
+            .actions {{
+                margin-top: 14px;
             }}
             table {{
                 border-collapse: collapse;
@@ -409,6 +427,18 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 color: #666;
                 margin-top: 8px;
             }}
+            .status {{
+                color: #4b5563;
+                display: none;
+                margin-top: 14px;
+            }}
+            .summary-note {{
+                background: #eef6ff;
+                border: 1px solid #bfdbfe;
+                color: #1e3a8a;
+                padding: 12px;
+                margin: 16px 0;
+            }}
             .downloads a {{
                 display: inline-block;
                 margin-right: 12px;
@@ -421,6 +451,25 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 border: 1px solid #e0b4b4;
             }}
         </style>
+        <script>
+            function markSubmitting(form) {{
+                const button = form.querySelector("button[type='submit']");
+                const status = document.getElementById("lookup-status");
+                const mode = form.querySelector("input[name='mode']:checked").value;
+
+                if (button) {{
+                    button.disabled = true;
+                    button.textContent = mode === "fast" ? "Vyhľadávam..." : "Kontrolujem registre...";
+                }}
+
+                if (status) {{
+                    status.style.display = "block";
+                    status.textContent = mode === "fast"
+                        ? "Rýchle vyhľadanie trvá zvyčajne pár sekúnd."
+                        : "Úplná kontrola môže trvať dlhšie, pretože používa viac verejných registrov.";
+                }}
+            }}
+        </script>
     </head>
     <body>
         {body}
@@ -436,19 +485,34 @@ def home():
         """
         <h1>Vyhľadanie dodávateľa podľa IČO</h1>
 
-        <form method="post" action="/lookup">
+        <form method="post" action="/lookup" onsubmit="markSubmitting(this)">
             <input
                 name="ico"
                 placeholder="napr. 36 785 512"
                 required
                 autofocus
             >
-            <button type="submit">Vyhľadať</button>
+
+            <div>
+                <label>
+                    <input type="radio" name="mode" value="fast" checked>
+                    Rýchlo
+                </label>
+                <label>
+                    <input type="radio" name="mode" value="full">
+                    Úplná kontrola
+                </label>
+            </div>
+
+            <div class="actions">
+                <button type="submit">Vyhľadať</button>
+            </div>
         </form>
 
         <div class="hint">
-            Zadajte IČO s medzerami alebo bez medzier. Výstup bude dostupný ako JSON, CSV a XLSX.
+            Rýchle vyhľadanie používa FinStat. Úplná kontrola pridá ORSR, RPVS a RÚZ a môže trvať dlhšie.
         </div>
+        <div id="lookup-status" class="status"></div>
         """,
     )
 
@@ -459,11 +523,15 @@ def health():
 
 
 @app.post("/lookup", response_class=HTMLResponse)
-def lookup(ico: str = Form(...)):
+def lookup(ico: str = Form(...), mode: str = Form("fast")):
     try:
         normalized_ico = normalize_ico(ico)
+        lookup_mode = "full" if mode == "full" else "fast"
 
-        result = scrape_subject(normalized_ico)
+        result = scrape_subject(
+            normalized_ico,
+            include_deep_sources=(lookup_mode == "full"),
+        )
         outputs = generate_outputs(result)
 
         summary_row = outputs["summary_row"]
@@ -493,11 +561,18 @@ def lookup(ico: str = Form(...)):
             """
 
         pretty_json = html.escape(json.dumps(result, ensure_ascii=False, indent=2))
+        mode_note = (
+            "Rýchly výsledok používa FinStat. Pre ORSR, RPVS a RÚZ spustite úplnú kontrolu."
+            if lookup_mode == "fast"
+            else "Úplná kontrola zahŕňa FinStat, ORSR, RPVS a RÚZ podľa dostupnosti registrov."
+        )
 
         body = f"""
         <a href="/">← Nové vyhľadanie</a>
 
         <h1>Výsledok pre IČO {html.escape(normalized_ico)}</h1>
+
+        <div class="summary-note">{html.escape(mode_note)}</div>
 
         <div class="downloads">
             <a href="/download/{html.escape(outputs["json_file"])}">Stiahnuť JSON</a>
