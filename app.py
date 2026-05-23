@@ -22,6 +22,33 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title=APP_TITLE)
 
+SOURCE_LABELS = {
+    "finstat": "FinStat",
+    "orsr": "Obchodný register (ORSR)",
+    "rpvs": "Register partnerov verejného sektora (RPVS)",
+    "ruz": "Register účtovných závierok (RÚZ)",
+}
+
+SUMMARY_LABELS = {
+    "ico": "IČO",
+    "obchodne_meno": "Obchodné meno",
+    "sidlo": "Sídlo",
+    "pravna_forma": "Právna forma",
+    "den_zapisu": "Deň zápisu",
+    "zakladne_imanie": "Základné imanie",
+    "sk_nace": "SK NACE",
+    "kategoria_zamestnancov": "Kategória zamestnancov",
+    "trzby_predaj_sluzieb": "Tržby z predaja služieb",
+    "vynosy": "Výnosy",
+    "zisk_strata": "Zisk / strata",
+    "rpvs_pocet_kuv": "Počet KUV v RPVS",
+    "orsr_pocet_statutarov": "Počet štatutárov v ORSR",
+    "zdroj_orsr": "ORSR",
+    "zdroj_rpvs": "RPVS",
+    "zdroj_finstat": "FinStat",
+    "zdroj_ruz": "RÚZ",
+}
+
 # ============================================================
 # INPUT VALIDATION
 # ============================================================
@@ -145,7 +172,7 @@ def build_risk_flags(result: dict) -> list[dict]:
     rpvs = result.get("rpvs", {}) or {}
     finstat = result.get("finstat", {}) or {}
     ruz = result.get("ruz", {}) or {}
-    mode = result.get("mode", "full")
+    selected_sources = set(result.get("selected_sources") or SOURCE_LABELS.keys())
 
     def source_error_detail(source_key: str, fallback: str) -> str:
         error = result.get(f"{source_key}_error") or {}
@@ -162,7 +189,7 @@ def build_risk_flags(result: dict) -> list[dict]:
 
         return fallback
 
-    if mode != "fast" and not orsr:
+    if "orsr" in selected_sources and not orsr:
         flags.append({
             "severity": "yellow",
             "flag": "ORSR data missing",
@@ -172,7 +199,7 @@ def build_risk_flags(result: dict) -> list[dict]:
             ),
         })
 
-    if not finstat:
+    if "finstat" in selected_sources and not finstat:
         flags.append({
             "severity": "yellow",
             "flag": "FinStat data missing",
@@ -182,7 +209,7 @@ def build_risk_flags(result: dict) -> list[dict]:
             ),
         })
 
-    if mode != "fast" and not ruz:
+    if "ruz" in selected_sources and not ruz:
         flags.append({
             "severity": "yellow",
             "flag": "RÚZ data missing",
@@ -192,7 +219,7 @@ def build_risk_flags(result: dict) -> list[dict]:
             ),
         })
 
-    if mode != "fast" and not rpvs:
+    if "rpvs" in selected_sources and not rpvs:
         flags.append({
             "severity": "yellow",
             "flag": "RPVS data missing",
@@ -361,6 +388,93 @@ def generate_outputs(result: dict) -> dict:
 # HTML RENDERING
 # ============================================================
 
+def display_label(key: str) -> str:
+    return SUMMARY_LABELS.get(key, key.replace("_", " ").strip().capitalize())
+
+
+def render_value(value: Any) -> str:
+    if value is None or value == "":
+        return ""
+
+    if isinstance(value, dict):
+        if not value:
+            return ""
+
+        rows = "\n".join(
+            f"<tr><th>{html.escape(display_label(str(key)))}</th><td>{render_value(item)}</td></tr>"
+            for key, item in value.items()
+        )
+        return f"<table class=\"nested-table\">{rows}</table>"
+
+    if isinstance(value, list):
+        if not value:
+            return ""
+
+        items = "\n".join(f"<li>{render_value(item)}</li>" for item in value)
+        return f"<ul>{items}</ul>"
+
+    return html.escape(str(value))
+
+
+def render_key_value_table(data: dict) -> str:
+    rows = "\n".join(
+        f"<tr><th>{html.escape(display_label(str(key)))}</th><td>{render_value(value)}</td></tr>"
+        for key, value in data.items()
+        if value not in (None, "", [], {})
+    )
+
+    if not rows:
+        return "<p class=\"muted\">Bez dostupných údajov.</p>"
+
+    return f"<table>{rows}</table>"
+
+
+def render_source_sections(result: dict) -> str:
+    selected_sources = result.get("selected_sources") or list(SOURCE_LABELS.keys())
+    sections = []
+
+    for source_key in selected_sources:
+        label = SOURCE_LABELS.get(source_key, source_key)
+        source_data = result.get(source_key) or {}
+        source_error = result.get(f"{source_key}_error") or {}
+
+        if source_data:
+            content = render_key_value_table(source_data)
+        elif isinstance(source_error, dict) and source_error:
+            detail = source_error.get("message", "Zdroj nevrátil údaje.")
+            current_url = source_error.get("current_url")
+            url_suffix = f" URL: {current_url}" if current_url else ""
+            content = (
+                "<p class=\"source-warning\">"
+                f"{html.escape(source_error.get('type', 'Chyba'))}: "
+                f"{html.escape(str(detail))}{html.escape(url_suffix)}"
+                "</p>"
+            )
+        else:
+            content = "<p class=\"muted\">Zdroj bol vybraný, ale nevrátil údaje.</p>"
+
+        sections.append(f"""
+        <section class="source-section">
+            <h2>{html.escape(label)}</h2>
+            {content}
+        </section>
+        """)
+
+    return "\n".join(sections)
+
+
+def selected_source_copy(selected_sources: list[str]) -> str:
+    labels = [SOURCE_LABELS[source] for source in selected_sources if source in SOURCE_LABELS]
+
+    if not labels:
+        return "Nebolo vybrané žiadne vyhľadávanie."
+
+    if len(labels) == 1:
+        return f"Vybraný zdroj: {labels[0]}."
+
+    return "Vybrané zdroje: " + ", ".join(labels) + "."
+
+
 def render_page(title: str, body: str) -> HTMLResponse:
     return HTMLResponse(f"""
     <!doctype html>
@@ -381,14 +495,24 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 width: 260px;
                 font-size: 16px;
             }}
+            fieldset {{
+                border: 1px solid #ddd;
+                margin: 18px 0 0;
+                padding: 14px 16px 16px;
+                max-width: 720px;
+            }}
+            legend {{
+                font-weight: 700;
+                padding: 0 6px;
+            }}
             label {{
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
-                margin: 14px 18px 0 0;
+                margin: 8px 18px 0 0;
                 color: #333;
             }}
-            input[type="radio"] {{
+            input[type="checkbox"] {{
                 width: auto;
             }}
             button {{
@@ -427,6 +551,9 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 color: #666;
                 margin-top: 8px;
             }}
+            .muted {{
+                color: #666;
+            }}
             .status {{
                 color: #4b5563;
                 display: none;
@@ -444,6 +571,18 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 margin-right: 12px;
                 margin-bottom: 12px;
             }}
+            .source-section {{
+                margin-top: 32px;
+            }}
+            .nested-table {{
+                margin-top: 0;
+            }}
+            .source-warning {{
+                background: #fff8e6;
+                border: 1px solid #f2d28b;
+                color: #7a4b00;
+                padding: 12px;
+            }}
             .error {{
                 color: #9b1c1c;
                 background: #fff0f0;
@@ -455,18 +594,18 @@ def render_page(title: str, body: str) -> HTMLResponse:
             function markSubmitting(form) {{
                 const button = form.querySelector("button[type='submit']");
                 const status = document.getElementById("lookup-status");
-                const mode = form.querySelector("input[name='mode']:checked").value;
+                const selectedServices = Array.from(form.querySelectorAll("input[name='services']:checked"));
 
                 if (button) {{
                     button.disabled = true;
-                    button.textContent = mode === "fast" ? "Vyhľadávam..." : "Kontrolujem registre...";
+                    button.textContent = selectedServices.length === 1
+                        ? "Vyhľadávam..."
+                        : "Kontrolujem vybrané zdroje...";
                 }}
 
                 if (status) {{
                     status.style.display = "block";
-                    status.textContent = mode === "fast"
-                        ? "Rýchle vyhľadanie trvá zvyčajne pár sekúnd."
-                        : "Úplná kontrola môže trvať dlhšie, pretože používa viac verejných registrov.";
+                    status.textContent = "Čakajte, výsledok pripravujeme podľa vybraných zdrojov.";
                 }}
             }}
         </script>
@@ -483,7 +622,7 @@ def home():
     return render_page(
         APP_TITLE,
         """
-        <h1>Vyhľadanie dodávateľa podľa IČO</h1>
+        <h1>Preverenie dodávateľa podľa IČO</h1>
 
         <form method="post" action="/lookup" onsubmit="markSubmitting(this)">
             <input
@@ -493,24 +632,33 @@ def home():
                 autofocus
             >
 
-            <div>
+            <fieldset>
+                <legend>Zdroje na overenie</legend>
                 <label>
-                    <input type="radio" name="mode" value="fast" checked>
-                    Rýchlo
+                    <input type="checkbox" name="services" value="finstat" checked>
+                    FinStat
                 </label>
                 <label>
-                    <input type="radio" name="mode" value="full">
-                    Úplná kontrola
+                    <input type="checkbox" name="services" value="orsr">
+                    ORSR
                 </label>
-            </div>
+                <label>
+                    <input type="checkbox" name="services" value="rpvs">
+                    RPVS
+                </label>
+                <label>
+                    <input type="checkbox" name="services" value="ruz">
+                    RÚZ
+                </label>
+            </fieldset>
 
             <div class="actions">
-                <button type="submit">Vyhľadať</button>
+                <button type="submit">Overiť dodávateľa</button>
             </div>
         </form>
 
         <div class="hint">
-            Rýchle vyhľadanie používa FinStat. Úplná kontrola pridá ORSR, RPVS a RÚZ a môže trvať dlhšie.
+            Vyberte jeden alebo viac zdrojov. FinStat býva najrýchlejší; ORSR, RPVS a RÚZ môžu trvať dlhšie.
         </div>
         <div id="lookup-status" class="status"></div>
         """,
@@ -523,14 +671,18 @@ def health():
 
 
 @app.post("/lookup", response_class=HTMLResponse)
-def lookup(ico: str = Form(...), mode: str = Form("fast")):
+def lookup(ico: str = Form(...), services: list[str] = Form(["finstat"])):
     try:
         normalized_ico = normalize_ico(ico)
-        lookup_mode = "full" if mode == "full" else "fast"
+        selected_services = [
+            service
+            for service in services
+            if service in SOURCE_LABELS
+        ] or ["finstat"]
 
         result = scrape_subject(
             normalized_ico,
-            include_deep_sources=(lookup_mode == "full"),
+            selected_sources=selected_services,
         )
         outputs = generate_outputs(result)
 
@@ -538,8 +690,9 @@ def lookup(ico: str = Form(...), mode: str = Form("fast")):
         risk_flags = outputs["risk_flags"]
 
         summary_rows_html = "\n".join(
-            f"<tr><th>{html.escape(str(key))}</th><td>{html.escape(stringify(value))}</td></tr>"
+            f"<tr><th>{html.escape(display_label(str(key)))}</th><td>{html.escape(stringify(value))}</td></tr>"
             for key, value in summary_row.items()
+            if value not in (None, "", [], {})
         )
 
         if risk_flags:
@@ -560,19 +713,15 @@ def lookup(ico: str = Form(...), mode: str = Form("fast")):
             </tr>
             """
 
-        pretty_json = html.escape(json.dumps(result, ensure_ascii=False, indent=2))
-        mode_note = (
-            "Rýchly výsledok používa FinStat. Pre ORSR, RPVS a RÚZ spustite úplnú kontrolu."
-            if lookup_mode == "fast"
-            else "Úplná kontrola zahŕňa FinStat, ORSR, RPVS a RÚZ podľa dostupnosti registrov."
-        )
+        source_sections_html = render_source_sections(result)
+        selected_copy = selected_source_copy(result.get("selected_sources", selected_services))
 
         body = f"""
         <a href="/">← Nové vyhľadanie</a>
 
         <h1>Výsledok pre IČO {html.escape(normalized_ico)}</h1>
 
-        <div class="summary-note">{html.escape(mode_note)}</div>
+        <div class="summary-note">{html.escape(selected_copy)}</div>
 
         <div class="downloads">
             <a href="/download/{html.escape(outputs["json_file"])}">Stiahnuť JSON</a>
@@ -595,8 +744,7 @@ def lookup(ico: str = Form(...), mode: str = Form("fast")):
             {risk_rows_html}
         </table>
 
-        <h2>Raw JSON</h2>
-        <pre>{pretty_json}</pre>
+        {source_sections_html}
         """
 
         return render_page(f"Výsledok {normalized_ico}", body)

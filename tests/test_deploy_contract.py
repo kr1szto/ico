@@ -54,15 +54,20 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn("source_key", main_py)
         self.assertIn("selenium_error", main_py)
         self.assertIn('type(error).__name__ == "TimeoutException"', main_py)
-        self.assertIn("include_deep_sources", main_py)
+        self.assertIn("selected_sources", main_py)
+        self.assertIn("normalize_selected_sources", main_py)
 
-    def test_ui_has_fast_default_and_full_lookup_mode(self):
+    def test_ui_has_service_picker_and_no_rendered_raw_json(self):
         app_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
-        self.assertIn('name="mode" value="fast" checked', app_py)
-        self.assertIn('name="mode" value="full"', app_py)
+        self.assertIn('name="services" value="finstat" checked', app_py)
+        self.assertIn('name="services" value="orsr"', app_py)
+        self.assertIn('name="services" value="rpvs"', app_py)
+        self.assertIn('name="services" value="ruz"', app_py)
         self.assertIn("markSubmitting", app_py)
-        self.assertIn("include_deep_sources=(lookup_mode == \"full\")", app_py)
+        self.assertIn("selected_sources=selected_services", app_py)
+        self.assertIn("render_source_sections", app_py)
+        self.assertNotIn("<h2>Raw JSON</h2>", app_py)
 
     def test_dockerfile_uses_railway_port_and_chromium(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")

@@ -755,28 +755,58 @@ def parse_ruz_detail(driver) -> dict:
 # ORCHESTRATION
 # ============================================================
 
-def scrape_subject(ico: str, include_deep_sources: bool = True) -> dict:
+def normalize_selected_sources(
+    selected_sources: list[str] | None = None,
+    include_deep_sources: bool | None = None,
+) -> set[str]:
+    if selected_sources is None:
+        if include_deep_sources is False:
+            return {"finstat"}
+        return {"finstat", "orsr", "rpvs", "ruz"}
+
+    allowed_sources = {"finstat", "orsr", "rpvs", "ruz"}
+    normalized_sources = {
+        source.strip().lower()
+        for source in selected_sources
+        if isinstance(source, str)
+    }
+
+    return normalized_sources & allowed_sources
+
+
+def scrape_subject(
+    ico: str,
+    selected_sources: list[str] | None = None,
+    include_deep_sources: bool | None = None,
+) -> dict:
+    sources = normalize_selected_sources(
+        selected_sources=selected_sources,
+        include_deep_sources=include_deep_sources,
+    )
+
     subjekt = {
         "ico": ico,
         "orsr": {},
         "rpvs": {},
         "finstat": {},
         "ruz": {},
-        "mode": "full" if include_deep_sources else "fast",
+        "selected_sources": sorted(sources),
     }
 
     driver = None
 
     try:
-        run_source(
-            subjekt,
-            "finstat",
-            "FinStat",
-            lambda: finstat_scrape(ico),
-            ico=ico,
-        )
+        if "finstat" in sources:
+            run_source(
+                subjekt,
+                "finstat",
+                "FinStat",
+                lambda: finstat_scrape(ico),
+                ico=ico,
+            )
 
-        if not include_deep_sources:
+        browser_sources = sources & {"orsr", "rpvs", "ruz"}
+        if not browser_sources:
             return subjekt
 
         driver = create_driver()
@@ -796,9 +826,12 @@ def scrape_subject(ico: str, include_deep_sources: bool = True) -> dict:
             ruz_search_company(driver, wait, ico)
             return parse_ruz_detail(driver)
 
-        run_source(subjekt, "orsr", "ORSR", scrape_orsr, driver=driver, ico=ico)
-        run_source(subjekt, "rpvs", "RPVS", scrape_rpvs, driver=driver, ico=ico)
-        run_source(subjekt, "ruz", "RÚZ", scrape_ruz, driver=driver, ico=ico)
+        if "orsr" in browser_sources:
+            run_source(subjekt, "orsr", "ORSR", scrape_orsr, driver=driver, ico=ico)
+        if "rpvs" in browser_sources:
+            run_source(subjekt, "rpvs", "RPVS", scrape_rpvs, driver=driver, ico=ico)
+        if "ruz" in browser_sources:
+            run_source(subjekt, "ruz", "RÚZ", scrape_ruz, driver=driver, ico=ico)
 
         return subjekt
 
