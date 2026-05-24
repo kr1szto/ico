@@ -69,6 +69,31 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn("render_source_sections", app_py)
         self.assertNotIn("<h2>Raw JSON</h2>", app_py)
 
+    def test_vendor_intelligence_sections_exist(self):
+        app_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn("build_vendor_intelligence", app_py)
+        self.assertIn("build_confidence_model", app_py)
+        self.assertIn("build_key_observations", app_py)
+        self.assertIn("build_verification_prompts", app_py)
+        self.assertIn("build_registry_coverage", app_py)
+        self.assertIn("Prevádzkový prehľad", app_py)
+        self.assertIn("Dôvera v podklad", app_py)
+        self.assertIn("Kľúčové pozorovania", app_py)
+        self.assertIn("Otázky pre vendor manažéra", app_py)
+        self.assertIn("Pokrytie registrov", app_py)
+        self.assertIn("Stiahnuť podklady", app_py)
+        self.assertIn("PDF je v backloge", app_py)
+
+    def test_slovak_validation_and_no_visible_raw_errors(self):
+        app_py = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn("Zadajte IČO spoločnosti.", app_py)
+        self.assertIn("Neplatný formát IČO.", app_py)
+        self.assertIn("Zdroj {SOURCE_LABELS.get(source_key, source_key)} je momentálne nedostupný.", app_py)
+        self.assertNotIn("Selenium setup failed", app_py)
+        self.assertNotIn("No basic risk flags", app_py)
+
     def test_dockerfile_uses_railway_port_and_chromium(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
