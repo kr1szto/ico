@@ -84,12 +84,13 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn("build_verification_prompts", app_py)
         self.assertIn("build_registry_coverage", app_py)
         self.assertIn("Prevádzkový prehľad", app_py)
-        self.assertIn("Dôvera v podklad", app_py)
+        self.assertIn("Kvalita dostupných údajov", app_py)
         self.assertIn("Kľúčové pozorovania", app_py)
-        self.assertIn("Otázky pre vendor manažéra", app_py)
+        self.assertNotIn("Otázky pre vendor manažéra", app_py)
         self.assertIn("Pokrytie registrov", app_py)
         self.assertIn("Stiahnuť podklady", app_py)
         self.assertIn("PDF je v backloge", app_py)
+        self.assertIn("SOURCE_SHORT_LABELS", app_py)
 
     def test_slovak_validation_and_no_visible_raw_errors(self):
         app_py = (ROOT / "app.py").read_text(encoding="utf-8")

@@ -35,6 +35,13 @@ SOURCE_LABELS = {
     "ruz": "Register účtovných závierok (RÚZ)",
 }
 
+SOURCE_SHORT_LABELS = {
+    "finstat": "FinStat",
+    "orsr": "ORSR",
+    "rpvs": "RPVS",
+    "ruz": "RÚZ",
+}
+
 SUMMARY_LABELS = {
     "ico": "IČO",
     "obchodne_meno": "Obchodné meno",
@@ -855,7 +862,7 @@ def render_coverage_cards(coverage: list[dict]) -> str:
     return "<div class=\"card-grid\">" + "\n".join(f"""
     <div class="coverage-card">
         <div class="coverage-top">
-            <strong>{html.escape(item["label"])}</strong>
+            <strong>{html.escape(SOURCE_SHORT_LABELS.get(item["source"], item["label"]))}</strong>
             <span class="coverage-status">{html.escape(item["status"])}</span>
         </div>
         <p>{html.escape(item["detail"])}</p>
@@ -1061,6 +1068,19 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 display: flex;
                 gap: 10px;
                 justify-content: space-between;
+                min-height: 32px;
+            }}
+            .coverage-top strong {{
+                font-size: 22px;
+                line-height: 1;
+            }}
+            .coverage-card {{
+                display: flex;
+                flex-direction: column;
+                min-height: 150px;
+            }}
+            .coverage-card p {{
+                margin-top: 18px;
             }}
             .prompt-list {{
                 margin: 0;
@@ -1367,18 +1387,13 @@ def lookup(ico: str = Form(""), services: list[str] = Form(["finstat"])):
         </section>
 
         <section class="panel">
-            <h2>Dôvera v podklad</h2>
+            <h2>Kvalita dostupných údajov</h2>
             {render_confidence_cards(intelligence["confidence"])}
         </section>
 
         <section class="panel">
             <h2>Kľúčové pozorovania</h2>
             {render_observation_cards(intelligence["observations"])}
-        </section>
-
-        <section class="panel">
-            <h2>Otázky pre vendor manažéra</h2>
-            {render_prompt_list(intelligence["verification_prompts"])}
         </section>
 
         <section class="panel">
