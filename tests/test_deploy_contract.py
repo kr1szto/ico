@@ -56,9 +56,20 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn('type(error).__name__ == "TimeoutException"', main_py)
         self.assertIn("selected_sources", main_py)
         self.assertIn("normalize_selected_sources", main_py)
-        self.assertIn('SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "10"))', main_py)
-        self.assertIn('PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "20"))', main_py)
+        self.assertIn('SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "6"))', main_py)
+        self.assertIn('PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "8"))', main_py)
+        self.assertIn("HTTP_REQUEST_TIMEOUT_SECONDS", main_py)
+        self.assertIn("MAX_BROWSER_SOURCES_PER_REQUEST", main_py)
         self.assertIn('driver.execute_script("window.stop();")', main_py)
+
+    def test_orsr_uses_http_endpoint_before_browser_sources(self):
+        main_py = (ROOT / "main.py").read_text(encoding="utf-8")
+
+        self.assertIn("def orsr_scrape", main_py)
+        self.assertIn("hladaj_ico.asp?ICO=", main_py)
+        self.assertIn("parse_orsr_detail_soup", main_py)
+        self.assertIn('browser_sources = sources & {"rpvs", "ruz"}', main_py)
+        self.assertIn("mark_source_skipped_for_runtime_budget", main_py)
 
     def test_ui_has_service_picker_and_no_rendered_raw_json(self):
         app_py = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -103,6 +114,7 @@ class DeployContractTest(unittest.TestCase):
 
         self.assertIn("Zadajte IČO spoločnosti.", app_py)
         self.assertIn("Neplatný formát IČO.", app_py)
+        self.assertIn("def normalize_text", app_py)
         self.assertIn("best_company_name", app_py)
         self.assertIn("escapeHtml", app_py)
         self.assertIn("Zdroj {SOURCE_LABELS.get(source_key, source_key)} je momentálne nedostupný.", app_py)

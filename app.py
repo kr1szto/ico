@@ -90,6 +90,10 @@ def normalize_ico(value: str) -> str:
     return ico
 
 
+def normalize_text(value: str) -> str:
+    return " ".join(str(value).split())
+
+
 # ============================================================
 # RESULT NORMALIZATION
 # ============================================================

@@ -6,6 +6,7 @@ import traceback
 import re
 import requests
 import urllib3
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -27,8 +28,17 @@ RUZ_URL = "https://www.registeruz.sk/cruz-public/domain/accountingentity/simples
 SELENIUM_URL = os.getenv("SELENIUM_URL", "").strip()
 CHROME_BIN = os.getenv("CHROME_BIN", "/usr/bin/chromium")
 CHROMEDRIVER_PATH = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "10"))
-PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "20"))
+SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "6"))
+PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "8"))
+HTTP_REQUEST_TIMEOUT_SECONDS = int(os.getenv("HTTP_REQUEST_TIMEOUT_SECONDS", "10"))
+MAX_BROWSER_SOURCES_PER_REQUEST = int(os.getenv("MAX_BROWSER_SOURCES_PER_REQUEST", "1"))
+HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+}
 
 
 # ============================================================
@@ -105,6 +115,21 @@ def save_debug(driver, prefix="debug"):
         print("[WARN] Nepodarilo sa uložiť debug artefakty:", e)
 
 
+def fetch_soup(url: str, *, encoding: str | None = None) -> BeautifulSoup:
+    response = requests.get(
+        url,
+        headers=HTTP_HEADERS,
+        timeout=HTTP_REQUEST_TIMEOUT_SECONDS,
+        verify=False,
+    )
+    response.raise_for_status()
+
+    if encoding:
+        response.encoding = encoding
+
+    return BeautifulSoup(response.text, "lxml")
+
+
 def format_source_error(error: Exception, driver=None) -> dict:
     if type(error).__name__ == "TimeoutException":
         message = "Timed out waiting for the expected registry page element."
@@ -144,6 +169,13 @@ def run_source(subjekt: dict, source_key: str, label: str, callback, driver=None
 
         if driver and ico:
             save_debug(driver, prefix=f"{ico}_{source_key}_debug")
+
+
+def mark_source_skipped_for_runtime_budget(subjekt: dict, source_key: str) -> None:
+    subjekt[f"{source_key}_error"] = {
+        "type": "SkippedDueRuntimeBudget",
+        "message": "Source was skipped to keep the web request responsive.",
+    }
 
 
 def normalize_text(text: str) -> str:
@@ -428,6 +460,11 @@ def parse_orsr_detail(driver) -> dict:
     print("[INFO] ORSR: parsujem detail firmy...")
     html = driver.page_source
     soup = BeautifulSoup(html, "lxml")
+    return parse_orsr_detail_soup(soup)
+
+
+def parse_orsr_detail_soup(soup: BeautifulSoup) -> dict:
+    print("[INFO] ORSR: parsujem detail firmy...")
 
     result = {}
     result.update(parse_orsr_basic_info(soup))
@@ -456,6 +493,20 @@ def parse_orsr_detail(driver) -> dict:
     )
 
     return result
+
+
+def orsr_scrape(ico: str) -> dict:
+    print("[INFO] ORSR: scraping cez HTTP endpoint...")
+    search_url = f"https://www.orsr.sk/hladaj_ico.asp?ICO={ico}&SID=0"
+    search_soup = fetch_soup(search_url, encoding="windows-1250")
+    detail_link = search_soup.select_one("a[href*='vypis.asp']")
+
+    if not detail_link or not detail_link.get("href"):
+        raise RuntimeError("ORSR: Spoločnosť sa podľa IČO nepodarilo nájsť.")
+
+    detail_url = urljoin("https://www.orsr.sk/", detail_link["href"])
+    detail_soup = fetch_soup(detail_url, encoding="windows-1250")
+    return parse_orsr_detail_soup(detail_soup)
 
 
 # ============================================================
@@ -591,20 +642,12 @@ def finstat_scrape(input_ico: str) -> dict:
     print("[INFO] FinStat: scraping...")
     url = f"https://finstat.sk/vyhladavanie?query={input_ico}"
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        )
-    }
-
     result = {
         "zakladne_udaje": {},
         "financne_ukazovatele": {}
     }
 
-    response = requests.get(url, headers=headers, timeout=15, verify=False)
+    response = requests.get(url, headers=HTTP_HEADERS, timeout=HTTP_REQUEST_TIMEOUT_SECONDS, verify=False)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "lxml")
@@ -815,7 +858,16 @@ def scrape_subject(
                 ico=ico,
             )
 
-        browser_sources = sources & {"orsr", "rpvs", "ruz"}
+        if "orsr" in sources:
+            run_source(
+                subjekt,
+                "orsr",
+                "ORSR",
+                lambda: orsr_scrape(ico),
+                ico=ico,
+            )
+
+        browser_sources = sources & {"rpvs", "ruz"}
         if not browser_sources:
             return subjekt
 
@@ -836,12 +888,21 @@ def scrape_subject(
             ruz_search_company(driver, wait, ico)
             return parse_ruz_detail(driver)
 
-        if "orsr" in browser_sources:
-            run_source(subjekt, "orsr", "ORSR", scrape_orsr, driver=driver, ico=ico)
+        attempted_browser_sources = 0
+
         if "rpvs" in browser_sources:
-            run_source(subjekt, "rpvs", "RPVS", scrape_rpvs, driver=driver, ico=ico)
+            if attempted_browser_sources < MAX_BROWSER_SOURCES_PER_REQUEST:
+                run_source(subjekt, "rpvs", "RPVS", scrape_rpvs, driver=driver, ico=ico)
+                attempted_browser_sources += 1
+            else:
+                mark_source_skipped_for_runtime_budget(subjekt, "rpvs")
+
         if "ruz" in browser_sources:
-            run_source(subjekt, "ruz", "RÚZ", scrape_ruz, driver=driver, ico=ico)
+            if attempted_browser_sources < MAX_BROWSER_SOURCES_PER_REQUEST:
+                run_source(subjekt, "ruz", "RÚZ", scrape_ruz, driver=driver, ico=ico)
+                attempted_browser_sources += 1
+            else:
+                mark_source_skipped_for_runtime_budget(subjekt, "ruz")
 
         return subjekt
 
@@ -849,6 +910,9 @@ def scrape_subject(
         print("[ERROR] Selenium orchestration zlyhala.")
         traceback.print_exc()
         subjekt["selenium_error"] = format_source_error(error, driver=driver)
+        for source_key in browser_sources:
+            if not subjekt.get(source_key) and not subjekt.get(f"{source_key}_error"):
+                subjekt[f"{source_key}_error"] = subjekt["selenium_error"]
         return subjekt
 
     finally:

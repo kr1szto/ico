@@ -17,8 +17,10 @@ Railway or Fly.io can build the Docker image, install Chromium/ChromeDriver, and
 
 ## Runtime modes
 
-- Railway, Fly.io, or single-container Docker: uses local Chromium through ChromeDriver.
+- Railway, Fly.io, or single-container Docker: uses local Chromium through ChromeDriver only for browser-only sources.
 - Docker Compose: uses the `selenium` sidecar because `SELENIUM_URL` is set to `http://selenium:4444/wd/hub`.
+- FinStat and ORSR use direct HTTP requests and do not require Selenium.
+- RPVS and RÚZ still require browser automation. The web request caps browser-only sources by `MAX_BROWSER_SOURCES_PER_REQUEST` so partial results can render instead of timing out the whole report.
 
 ## Fly.io
 
