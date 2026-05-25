@@ -27,8 +27,8 @@ RUZ_URL = "https://www.registeruz.sk/cruz-public/domain/accountingentity/simples
 SELENIUM_URL = os.getenv("SELENIUM_URL", "").strip()
 CHROME_BIN = os.getenv("CHROME_BIN", "/usr/bin/chromium")
 CHROMEDRIVER_PATH = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "45"))
-PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "60"))
+SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "10"))
+PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "20"))
 
 
 # ============================================================
@@ -85,7 +85,7 @@ def configure_driver_timeouts(driver) -> None:
     driver.set_script_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
 
 
-def create_driver(max_attempts=10, delay=3):
+def create_driver(max_attempts=3, delay=1):
     use_local_driver = not SELENIUM_URL
     options = build_chrome_options(use_local_binary=use_local_driver)
 
@@ -135,6 +135,12 @@ def run_source(subjekt: dict, source_key: str, label: str, callback, driver=None
         print(f"[ERROR] {label} zlyhal.")
         traceback.print_exc()
         subjekt[f"{source_key}_error"] = format_source_error(error, driver=driver)
+
+        if driver:
+            try:
+                driver.execute_script("window.stop();")
+            except Exception:
+                pass
 
         if driver and ico:
             save_debug(driver, prefix=f"{ico}_{source_key}_debug")
@@ -461,7 +467,7 @@ def rpvs_search_company(driver, wait, ico: str):
     driver.get(RPVS_URL)
 
     wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
-    time.sleep(2)
+    time.sleep(0.5)
 
     rpvs_input = wait.until(
         EC.presence_of_element_located((By.ID, "partner_hladat_text"))
@@ -474,7 +480,7 @@ def rpvs_search_company(driver, wait, ico: str):
     wait.until(
         EC.presence_of_element_located((By.ID, "table-VyhladavaniePartnera"))
     )
-    time.sleep(2)
+    time.sleep(0.5)
 
 
 def rpvs_open_first_result(driver, wait):
@@ -606,6 +612,10 @@ def finstat_scrape(input_ico: str) -> dict:
     # Základné info
     element = soup.select_one("div.col-md-8.detail-company-info-side.col-xs-12")
     if element:
+        title = soup.select_one("h1")
+        if title:
+            result["zakladne_udaje"]["Názov"] = normalize_text(title.get_text(" ", strip=True))
+
         for lead in element.select("div.lead"):
             lead.decompose()
 
@@ -665,7 +675,7 @@ def ruz_search_company(driver, wait, ico: str):
     driver.get(RUZ_URL)
 
     wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
-    time.sleep(2)
+    time.sleep(0.5)
 
     print("[INFO] RUZ: hľadám input...")
 

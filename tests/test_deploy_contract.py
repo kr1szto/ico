@@ -56,6 +56,9 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn('type(error).__name__ == "TimeoutException"', main_py)
         self.assertIn("selected_sources", main_py)
         self.assertIn("normalize_selected_sources", main_py)
+        self.assertIn('SCRAPER_WAIT_SECONDS = int(os.getenv("SCRAPER_WAIT_SECONDS", "10"))', main_py)
+        self.assertIn('PAGE_LOAD_TIMEOUT_SECONDS = int(os.getenv("PAGE_LOAD_TIMEOUT_SECONDS", "20"))', main_py)
+        self.assertIn('driver.execute_script("window.stop();")', main_py)
 
     def test_ui_has_service_picker_and_no_rendered_raw_json(self):
         app_py = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -68,6 +71,9 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn("selected_sources=selected_services", app_py)
         self.assertIn("render_source_sections", app_py)
         self.assertNotIn("<h2>Raw JSON</h2>", app_py)
+        self.assertIn("novalidate", app_py)
+        self.assertIn("return markSubmitting(this)", app_py)
+        self.assertNotIn("required\n                autofocus", app_py)
 
     def test_vendor_intelligence_sections_exist(self):
         app_py = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -90,6 +96,8 @@ class DeployContractTest(unittest.TestCase):
 
         self.assertIn("Zadajte IČO spoločnosti.", app_py)
         self.assertIn("Neplatný formát IČO.", app_py)
+        self.assertIn("best_company_name", app_py)
+        self.assertIn("escapeHtml", app_py)
         self.assertIn("Zdroj {SOURCE_LABELS.get(source_key, source_key)} je momentálne nedostupný.", app_py)
         self.assertNotIn("Selenium setup failed", app_py)
         self.assertNotIn("No basic risk flags", app_py)

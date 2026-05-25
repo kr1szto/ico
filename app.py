@@ -162,6 +162,23 @@ def source_error_message(source_key: str) -> str:
     )
 
 
+def best_company_name(result: dict) -> str:
+    orsr = result.get("orsr", {}) or {}
+    rpvs = result.get("rpvs", {}) or {}
+    finstat = result.get("finstat", {}) or {}
+    ruz = result.get("ruz", {}) or {}
+
+    finstat_basic = finstat.get("zakladne_udaje", {}) or {}
+    rpvs_partner = rpvs.get("partner_verejneho_sektora", {}) or {}
+
+    return (
+        orsr.get("obchodne_meno", "")
+        or ruz.get("nazov", "")
+        or rpvs_partner.get("Obchodné meno", "")
+        or find_first_value(finstat_basic, ["názov", "nazov", "obchodné meno", "obchodne meno"])
+    )
+
+
 def build_summary_row(result: dict) -> dict:
     """
     Creates one flat summary row for CSV/XLSX.
@@ -180,11 +197,7 @@ def build_summary_row(result: dict) -> dict:
 
     return {
         "ico": result.get("ico", ""),
-        "obchodne_meno": (
-            orsr.get("obchodne_meno", "")
-            or ruz.get("nazov", "")
-            or rpvs_partner.get("Obchodné meno", "")
-        ),
+        "obchodne_meno": best_company_name(result),
         "sidlo": orsr.get("sidlo", "") or finstat_basic.get("Sídlo", ""),
         "pravna_forma": orsr.get("pravna_forma", ""),
         "den_zapisu": orsr.get("den_zapisu", ""),
@@ -865,7 +878,7 @@ def render_download_section(outputs: dict) -> str:
 
 
 def render_company_header(summary_row: dict, intelligence: dict) -> str:
-    company_name = summary_row.get("obchodne_meno") or "Neznáma spoločnosť"
+    company_name = summary_row.get("obchodne_meno") or "Názov spoločnosti nebol získaný"
     legal_form = summary_row.get("pravna_forma") or "Neoverené"
     registry_status = intelligence["registry_status"]
 
@@ -1154,9 +1167,21 @@ def render_page(title: str, body: str) -> HTMLResponse:
         </style>
         <script>
             function markSubmitting(form) {{
+                const icoInput = form.querySelector("input[name='ico']");
                 const button = form.querySelector("button[type='submit']");
                 const status = document.getElementById("lookup-status");
                 const selectedServices = Array.from(form.querySelectorAll("input[name='services']:checked"));
+
+                if (!icoInput || !icoInput.value.replace(/\\D/g, "")) {{
+                    if (status) {{
+                        status.style.display = "block";
+                        status.textContent = "Zadajte IČO spoločnosti.";
+                    }}
+                    if (icoInput) {{
+                        icoInput.focus();
+                    }}
+                    return false;
+                }}
 
                 if (button) {{
                     button.disabled = true;
@@ -1169,6 +1194,8 @@ def render_page(title: str, body: str) -> HTMLResponse:
                     status.style.display = "block";
                     status.textContent = "Čakajte, výsledok pripravujeme podľa vybraných zdrojov.";
                 }}
+
+                return true;
             }}
 
             function recentSearches() {{
@@ -1181,8 +1208,17 @@ def render_page(title: str, body: str) -> HTMLResponse:
 
             function saveRecentSearch(ico, name) {{
                 const current = recentSearches().filter((item) => item.ico !== ico);
-                current.unshift({{ ico, name: name || "Neznáma spoločnosť", searchedAt: new Date().toISOString() }});
+                current.unshift({{ ico, name: name || "", searchedAt: new Date().toISOString() }});
                 localStorage.setItem("recentIcoSearches", JSON.stringify(current.slice(0, 5)));
+            }}
+
+            function escapeHtml(value) {{
+                return String(value || "")
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll('"', "&quot;")
+                    .replaceAll("'", "&#039;");
             }}
 
             function renderRecentSearches() {{
@@ -1197,16 +1233,23 @@ def render_page(title: str, body: str) -> HTMLResponse:
                     return;
                 }}
 
-                container.innerHTML = searches.map((item) => `
+                container.innerHTML = searches.map((item) => {{
+                    const safeIco = escapeHtml(item.ico);
+                    const hasName = item.name && item.name !== "Neznáma spoločnosť";
+                    const title = hasName
+                        ? escapeHtml(item.name)
+                        : `IČO: ${{safeIco}}`;
+
+                    return `
                     <form method="post" action="/lookup" class="recent-item">
-                        <input type="hidden" name="ico" value="${{item.ico}}">
+                        <input type="hidden" name="ico" value="${{safeIco}}">
                         <input type="hidden" name="services" value="finstat">
                         <button type="submit">
-                            <strong>${{item.name}}</strong>
-                            <span>IČO: ${{item.ico}}</span>
+                            <strong>${{title}}</strong>
+                            <span>${{hasName ? `IČO: ${{safeIco}}` : "Zopakovať vyhľadávanie"}}</span>
                         </button>
                     </form>
-                `).join("");
+                `; }}).join("");
             }}
 
             document.addEventListener("DOMContentLoaded", renderRecentSearches);
@@ -1230,11 +1273,10 @@ def home():
             Získajte prehľad dostupných údajov z verejných registrov a podklady pre interné posúdenie dodávateľa.
         </p>
 
-        <form method="post" action="/lookup" onsubmit="markSubmitting(this)">
+        <form method="post" action="/lookup" onsubmit="return markSubmitting(this)" novalidate>
             <input
                 name="ico"
                 placeholder="Zadajte IČO spoločnosti"
-                required
                 autofocus
             >
 
@@ -1308,7 +1350,7 @@ def lookup(ico: str = Form(""), services: list[str] = Form(["finstat"])):
             if any(item["status"] in {"Chyba", "Nedostupné"} for item in intelligence["coverage"])
             else ""
         )
-        company_name_for_recent = summary_row.get("obchodne_meno") or "Neznáma spoločnosť"
+        company_name_for_recent = summary_row.get("obchodne_meno") or ""
         recent_ico_json = json.dumps(normalized_ico, ensure_ascii=False)
         recent_name_json = json.dumps(company_name_for_recent, ensure_ascii=False)
 
