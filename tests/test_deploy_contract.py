@@ -74,6 +74,12 @@ class DeployContractTest(unittest.TestCase):
         self.assertIn("novalidate", app_py)
         self.assertIn("return markSubmitting(this)", app_py)
         self.assertNotIn("required\n                autofocus", app_py)
+        self.assertIn('name="services" value="orsr" checked', app_py)
+        self.assertIn('name="services" value="rpvs" checked', app_py)
+        self.assertIn('name="services" value="ruz" checked', app_py)
+        self.assertIn('Form(["finstat", "orsr", "rpvs", "ruz"])', app_py)
+        self.assertIn("normalizeServices(item.services)", app_py)
+        self.assertNotIn('<input type="hidden" name="services" value="finstat">', app_py)
 
     def test_vendor_intelligence_sections_exist(self):
         app_py = (ROOT / "app.py").read_text(encoding="utf-8")

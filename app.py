@@ -812,7 +812,7 @@ def render_source_sections(result: dict) -> str:
 
 
 def selected_source_copy(selected_sources: list[str]) -> str:
-    labels = [SOURCE_LABELS[source] for source in selected_sources if source in SOURCE_LABELS]
+    labels = [SOURCE_SHORT_LABELS[source] for source in selected_sources if source in SOURCE_SHORT_LABELS]
 
     if not labels:
         return "Nebolo vybrané žiadne vyhľadávanie."
@@ -1218,6 +1218,8 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 return true;
             }}
 
+            const defaultServices = ["finstat", "orsr", "rpvs", "ruz"];
+
             function recentSearches() {{
                 try {{
                     return JSON.parse(localStorage.getItem("recentIcoSearches") || "[]");
@@ -1226,9 +1228,22 @@ def render_page(title: str, body: str) -> HTMLResponse:
                 }}
             }}
 
-            function saveRecentSearch(ico, name) {{
+            function normalizeServices(services) {{
+                const allowed = new Set(defaultServices);
+                const normalized = Array.isArray(services)
+                    ? services.filter((service) => allowed.has(service))
+                    : [];
+                return normalized.length ? normalized : defaultServices;
+            }}
+
+            function saveRecentSearch(ico, name, services) {{
                 const current = recentSearches().filter((item) => item.ico !== ico);
-                current.unshift({{ ico, name: name || "", searchedAt: new Date().toISOString() }});
+                current.unshift({{
+                    ico,
+                    name: name || "",
+                    services: normalizeServices(services),
+                    searchedAt: new Date().toISOString()
+                }});
                 localStorage.setItem("recentIcoSearches", JSON.stringify(current.slice(0, 5)));
             }}
 
@@ -1259,11 +1274,14 @@ def render_page(title: str, body: str) -> HTMLResponse:
                     const title = hasName
                         ? escapeHtml(item.name)
                         : `IČO: ${{safeIco}}`;
+                    const servicesInputs = normalizeServices(item.services)
+                        .map((service) => `<input type="hidden" name="services" value="${{escapeHtml(service)}}">`)
+                        .join("");
 
                     return `
                     <form method="post" action="/lookup" class="recent-item">
                         <input type="hidden" name="ico" value="${{safeIco}}">
-                        <input type="hidden" name="services" value="finstat">
+                        ${{servicesInputs}}
                         <button type="submit">
                             <strong>${{title}}</strong>
                             <span>${{hasName ? `IČO: ${{safeIco}}` : "Zopakovať vyhľadávanie"}}</span>
@@ -1307,15 +1325,15 @@ def home():
                     FinStat
                 </label>
                 <label>
-                    <input type="checkbox" name="services" value="orsr">
+                    <input type="checkbox" name="services" value="orsr" checked>
                     ORSR
                 </label>
                 <label>
-                    <input type="checkbox" name="services" value="rpvs">
+                    <input type="checkbox" name="services" value="rpvs" checked>
                     RPVS
                 </label>
                 <label>
-                    <input type="checkbox" name="services" value="ruz">
+                    <input type="checkbox" name="services" value="ruz" checked>
                     RÚZ
                 </label>
             </fieldset>
@@ -1345,7 +1363,7 @@ def health():
 
 
 @app.post("/lookup", response_class=HTMLResponse)
-def lookup(ico: str = Form(""), services: list[str] = Form(["finstat"])):
+def lookup(ico: str = Form(""), services: list[str] = Form(["finstat", "orsr", "rpvs", "ruz"])):
     try:
         normalized_ico = normalize_ico(ico)
         selected_services = [
@@ -1373,6 +1391,7 @@ def lookup(ico: str = Form(""), services: list[str] = Form(["finstat"])):
         company_name_for_recent = summary_row.get("obchodne_meno") or ""
         recent_ico_json = json.dumps(normalized_ico, ensure_ascii=False)
         recent_name_json = json.dumps(company_name_for_recent, ensure_ascii=False)
+        recent_services_json = json.dumps(selected_services, ensure_ascii=False)
 
         body = f"""
         <a href="/">← Nové vyhľadanie</a>
@@ -1410,7 +1429,7 @@ def lookup(ico: str = Form(""), services: list[str] = Form(["finstat"])):
         </section>
 
         <script>
-            saveRecentSearch({recent_ico_json}, {recent_name_json});
+            saveRecentSearch({recent_ico_json}, {recent_name_json}, {recent_services_json});
         </script>
         """
 
